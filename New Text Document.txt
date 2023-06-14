@@ -1,0 +1,99 @@
+package com.vaf.steps;
+
+import cucumber.api.java.en.When;
+import org.apache.jmeter.engine.StandardJMeterEngine;
+import org.apache.jmeter.protocol.http.sampler.HTTPSamplerProxy;
+import org.apache.jmeter.reporters.ResultCollector;
+import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.testelement.TestPlan;
+import org.apache.jmeter.threads.JMeterContext;
+import org.apache.jmeter.threads.JMeterVariables;
+import org.apache.jmeter.threads.ThreadGroup;
+import org.apache.jmeter.util.JMeterUtils;
+import org.apache.jorphan.collections.HashTree;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.testng.annotations.Test;
+import org.apache.jmeter.control.LoopController;
+import org.apache.jmeter.threads.JMeterContextService;
+
+
+public class JMeterSeleniumExample {
+
+    @Test
+    @When("User navigates to {string}")
+    public void Jmeter(String URL) {
+
+        // Set JMeter properties
+        JMeterUtils.loadJMeterProperties("D:\\api\\apache-jmeter-5.5\\bin\\jmeter.properties");
+        JMeterUtils.initLocale();
+
+        // Create a test plan
+        TestPlan testPlan = new TestPlan();
+        testPlan.setName("Example Test Plan");
+
+        // Create a thread group
+        ThreadGroup threadGroup = new ThreadGroup();
+        threadGroup.setName("Example Thread Group");
+        threadGroup.setNumThreads(3);
+
+        // Add a Timer to introduce delay before sending the request
+        long delayInMillis = 500; // Set the desired delay time in milliseconds
+        threadGroup.setRampUp((int) delayInMillis);
+
+        // Create a LoopController
+        LoopController loopController = new LoopController();
+        loopController.setLoops(1);
+        loopController.setFirst(true);
+        loopController.initialize();
+
+        // Set the LoopController as the sampler controller for the thread group
+        threadGroup.setSamplerController(loopController);
+
+        // Create an HTTP sampler
+        HTTPSamplerProxy sampler = new HTTPSamplerProxy();
+        sampler.setName("Example Sampler");
+        sampler.setDomain(URL);
+        sampler.setPort(80);
+        sampler.setPath("/mobile");
+        sampler.setMethod("GET");
+
+        // Add the sampler to the thread group
+        threadGroup.addTestElement(sampler);
+
+        // Create a result collector
+        ResultCollector resultCollector = new ResultCollector();
+        resultCollector.setName("Example Result Collector");
+        resultCollector.setFilename("results.jtl");
+
+        // Add the result collector to the test plan
+        testPlan.addTestElement(resultCollector);
+
+        // Set the test plan to the JMeter engine
+        StandardJMeterEngine jmeterEngine = new StandardJMeterEngine();
+        HashTree testPlanTree = new HashTree();
+        testPlanTree.add(testPlan);
+        testPlanTree.add(testPlan, threadGroup);
+        testPlanTree.add(threadGroup, sampler);
+        testPlanTree.add(testPlan, resultCollector);
+        jmeterEngine.configure(testPlanTree);
+
+        // Start the JMeter engine
+        jmeterEngine.run();
+
+        // Measure the time taken for the request
+        JMeterVariables jMeterVariables = JMeterContextService.getContext().getVariables();
+        long startTime = Long.parseLong(jMeterVariables.get("TESTSTART.MS"));
+        long endTime = System.currentTimeMillis();
+        long elapsedTime = endTime - startTime;
+        System.out.println("Elapsed Timesssssssssssssssssssssssssssssssssssssssssssss: " + elapsedTime + " milliseconds");
+
+        // Initialize Selenium WebDriver
+        WebDriver driver = new ChromeDriver();
+
+        // Perform actions using WebDriver (e.g., navigation, form submission, etc.)
+        driver.get(URL);
+
+
+    }
+}
