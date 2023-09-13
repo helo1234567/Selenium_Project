@@ -1,106 +1,610 @@
-package com.vaf.steps;
+package com.vaf.api;
 
-import cucumber.api.java.en.When;
-import org.apache.jmeter.engine.StandardJMeterEngine;
-import org.apache.jmeter.protocol.http.sampler.HTTPSamplerProxy;
-import org.apache.jmeter.reporters.ResultCollector;
-import org.apache.jmeter.samplers.SampleResult;
-import org.apache.jmeter.reporters.Summariser;
-import org.apache.jmeter.testelement.TestPlan;
-import org.apache.jmeter.threads.JMeterContextService;
-import org.apache.jmeter.threads.JMeterVariables;
-import org.apache.jmeter.threads.ThreadGroup;
-import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.collections.HashTree;
-import org.apache.jmeter.save.CSVSaveService;
-import org.testng.annotations.Test;
-import org.apache.jmeter.control.LoopController;
-import java.io.File;
-import java.io.FileReader;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
+import com.vaf.utils.ConfigUtil;
+import com.vaf.utils.ExcelUtil;
+import io.restassured.RestAssured;
+import io.restassured.response.Response;
+import io.restassured.response.ValidatableResponse;
+import io.restassured.specification.RequestSpecification;
+import org.hamcrest.Matchers;
+import org.hamcrest.core.Is;
+import org.json.JSONArray;
+import org.json.JSONException;
+import  org.json.JSONObject;
+import com.jayway.jsonpath.Configuration;
+import com.jayway.jsonpath.JsonPath;
+import com.google.gson.JsonObject;
+
 import java.io.IOException;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+public class APIManager {
+    ExcelUtil excelUtil=new ExcelUtil(); //Create an object of ExcelUtil Class
 
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVRecord;
-public class JMeterSeleniumExample {
+    /**
+     * Converts a JSON string to a HashMap where keys represent the paths of JSON properties
+     * and values represent the corresponding values.
+     *
+     * @param jsonStr The JSON string to convert.
+     * @return A HashMap containing the key-value pairs from the JSON string.
+     */
+    public static HashMap<String, String> jsonToMap(String jsonStr) {
+        HashMap<String, String> map = new HashMap<>();
 
-    @Test
-    @When("User navigates to {string}")
-    public void Jmeter(String URL) {
-        // Set JMeter properties
-        JMeterUtils.loadJMeterProperties("src/test/resources/jmeter.properties");
-        JMeterUtils.initLocale();
-
-        // Create a test plan
-        TestPlan testPlan = new TestPlan();
-        testPlan.setName("Example Test Plan");
-
-        // Create a thread group
-        ThreadGroup threadGroup = new ThreadGroup();
-        threadGroup.setName("Example Thread Group");
-        threadGroup.setNumThreads(500);
-
-
-        // Add a Timer to introduce delay before sending the request
-        long delayInMillis = 2; // Set the desired delay time in milliseconds
-        threadGroup.setRampUp((int) delayInMillis);
-
-        // Create a LoopController
-        LoopController loopController = new LoopController();
-        loopController.setLoops(1);
-        loopController.setFirst(true);
-        loopController.initialize();
-
-        // Set the LoopController as the sampler controller for the thread group
-        threadGroup.setSamplerController(loopController);
-
-        // Create an HTTP sampler
-        HTTPSamplerProxy sampler = new HTTPSamplerProxy();
-        sampler.setName("Example Sampler");
-        sampler.setProtocol("https"); // Set the protocol to HTTPS
-        sampler.setDomain(URL); // Use the provided URL variable
-        sampler.setPath("/gp/goldbox?ref_=nav_cs_gb");
-        sampler.setMethod("GET");
-
-        // Add the sampler to the thread group
-        threadGroup.addTestElement(sampler);
-
-        // Create a result collector
-        ResultCollector resultCollector = new ResultCollector();
-        Summariser summariser = new Summariser();
-        resultCollector.setFilename("results.jtl");
-        resultCollector.addTestElement(summariser);
-
-
-        // Add the result collector to the test plan
-        testPlan.addTestElement(resultCollector);
-
-        // Set the test plan to the JMeter engine
-        StandardJMeterEngine jmeterEngine = new StandardJMeterEngine();
-        HashTree testPlanTree = new HashTree();
-        testPlanTree.add(testPlan);
-        testPlanTree.add(testPlan, threadGroup);
-        testPlanTree.add(threadGroup, sampler);
-        testPlanTree.add(testPlan, resultCollector);
-        jmeterEngine.configure(testPlanTree);
-
-        // Start the JMeter engine
-        jmeterEngine.run();
-
-        try (CSVParser parser = new CSVParser(new FileReader("results.jtl"), CSVFormat.DEFAULT)) {
-            for (CSVRecord record : parser) {
-                String sampleTime = record.get(1); // Assuming sample time is in the second column
-                System.out.println("Sample Time: " + sampleTime + " milliseconds");
+        try {
+            // Check if the response starts with "[" (JSON array)
+            if (jsonStr.startsWith("[")) {
+                org.json.JSONArray jsonArray = new org.json.JSONArray(jsonStr);
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    JSONObject jsonObject = jsonArray.getJSONObject(i);
+                    jsonToMapHelper(jsonObject, "response[" + i + "]", map);
+                }
+            } else {
+                // Response starts with "{" (JSON object)
+                jsonToMapHelper(new JSONObject(jsonStr), "", map);
             }
-        } catch (IOException e) {
+        } catch (JSONException e) {
             e.printStackTrace();
         }
 
-        // Measure the time taken for the request
-        JMeterVariables jMeterVariables = JMeterContextService.getContext().getVariables();
-        long startTime = Long.parseLong(jMeterVariables.get("TESTSTART.MS"));
-        long endTime = System.currentTimeMillis();
-        long elapsedTime = endTime - startTime;
-        System.out.println("Elapsed Timesssssssssssssssssssssssssssssssssssssssssssss: " + elapsedTime + " milliseconds");
+        return map;
+    }
+
+    /**
+     * Converts a JSON string to a HashMap where keys represent the paths of JSON properties
+     * and values represent the corresponding values as Objects.
+     *
+     * @param jsonStr The JSON string to convert.
+     * @return A HashMap containing the key-value pairs from the JSON string.
+     */
+    public static HashMap<String, Object> jsonToMaps(String jsonStr) {
+        HashMap<String, Object> map = new HashMap<>();
+
+        try {
+            // Check if the response starts with "[" (JSON array)
+            if (jsonStr.startsWith("[")) {
+                org.json.JSONArray jsonArray = new org.json.JSONArray(jsonStr);
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    JSONObject jsonObject = jsonArray.getJSONObject(i);
+                    jsonToMapHelpers(jsonObject, "response[" + i + "]", map);
+                }
+            } else {
+                // Response starts with "{" (JSON object)
+                jsonToMapHelpers(new JSONObject(jsonStr), "", map);
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        return map;
+    }
+
+    /**
+     * Recursively converts a JSON object or array into a HashMap with key-value pairs.
+     *
+     * @param jsonObject The JSON object to be converted.
+     * @param parentKey  The parent key for the current JSON object.
+     * @param map        The HashMap to store the converted key-value pairs in (String,Object).
+     */
+    private static void jsonToMapHelpers(JSONObject jsonObject, String parentKey, HashMap<String, Object> map) {
+        // Get the keys of the JSON object
+        Iterator<?> keys = jsonObject.keys();
+        // Iterate through the keys
+        while (keys.hasNext()) {
+            String key = (String) keys.next();
+            String fullKey = parentKey.isEmpty() ? key : parentKey + "." + key;
+            Object value = jsonObject.get(key);
+        // Check if the value is a nested JSON object
+            if (value instanceof JSONObject) {
+                jsonToMapHelpers((JSONObject) value, fullKey, map);
+            }
+            // Check if the value is a JSON array
+            else if (value instanceof org.json.JSONArray) {
+                org.json.JSONArray jsonArray = (JSONArray) value;
+                List<Object> arrayElements = new ArrayList<>();
+                // Iterate through the array elements
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    Object arrayElement = jsonArray.get(i);
+                    if (arrayElement instanceof JSONObject) {
+                        // Process nested JSON object in the array
+                        HashMap<String, Object> nestedMap = new HashMap<>();
+                        jsonToMapHelpers((JSONObject) arrayElement, fullKey + "[" + i + "]", nestedMap);
+                        arrayElements.add(nestedMap);
+                    } else {
+                        // Add non-object array element
+                        arrayElements.add(arrayElement);
+                    }
+                }
+                // Put the array elements in the map
+                map.put(fullKey, arrayElements);
+            } else {
+                // Put the value in the map
+                map.put(fullKey, value);
+            }
+        }
+    }
+
+    /**
+     * Recursively converts a JSON object or array into a HashMap with key-value pairs.
+     *
+     * @param jsonObject The JSON object to be converted.
+     * @param parentKey  The parent key for the current JSON object.
+     * @param map        The HashMap to store the converted key-value pairs in (String,String).
+     */
+    private static void jsonToMapHelper(JSONObject jsonObject, String parentKey, HashMap<String, String> map)  {
+        // Get the keys of the JSON object
+        Iterator<?> keys = jsonObject.keys();
+        // Iterate through the keys
+        while (keys.hasNext()) {
+            String key = (String) keys.next();
+            String fullKey = parentKey.isEmpty() ? key : parentKey + "." + key;
+            Object value = jsonObject.get(key);
+        // Check if the value is a nested JSON object
+            if (value instanceof JSONObject) {
+                // Recursively process the nested JSON object
+                jsonToMapHelper((JSONObject) value, fullKey, map);
+            }
+            // Check if the value is a JSON array
+            else if (value instanceof org.json.JSONArray) {
+                org.json.JSONArray jsonArray = (JSONArray) value;
+                // Iterate through the array elements
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    Object arrayElement = jsonArray.get(i);
+                    if (arrayElement instanceof JSONObject) {
+                        // Process nested JSON object in the array
+                        jsonToMapHelper((JSONObject) arrayElement, fullKey + "[" + i + "]", map);
+                    } else {
+                        // Put non-object array element in the map
+                        map.put(fullKey + "[" + i + "]", arrayElement.toString());
+                    }
+                }
+            } else {
+                // Put the value in the map
+                map.put(fullKey, value.toString());
+            }
+        }
+    }
+
+    /**
+     * Extracts a value from a JSON response using the given key path.
+     *
+     * @param jsonResponse The JSON response from which to extract the value.
+     * @param keyPath      The key path to the desired value in the JSON.
+     * @return The extracted value as a String, or null if extraction fails.
+     */
+    public static String extractValueFromJson(String jsonResponse, String keyPath) {
+        try {
+            // Create a default configuration for JsonPath
+            Configuration configuration = Configuration.defaultConfiguration();
+            // Parse the JSON response using JsonPath and extract the value using the provided key path
+            Object jsonValue = JsonPath.using(configuration).parse(jsonResponse).read(keyPath);
+            // Convert the extracted value to a string and return it
+            return jsonValue.toString();
+        } catch (Exception e) {
+            // If there's an exception during the extraction process, print the stack trace and return null
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Validates whether the given string is a valid JSON object or array.
+     *
+     * @param jsonStr The string to be validated as JSON.
+     * @return True if the string is a valid JSON object or array, otherwise false.
+     */
+    public static boolean ValidJson(String jsonStr) {
+        try {
+            // Parse the input JSON string using JsonParser and create a JsonElement
+            JsonElement jsonElement = JsonParser.parseString(jsonStr);
+            // Check if the parsed element is a JSON object or a JSON array
+            // Return true if it's either an object or an array, indicating that the JSON is valid
+            return jsonElement.isJsonObject() || jsonElement.isJsonArray();
+        } catch (Exception e) {
+            // If an exception occurs during parsing, return false indicating that the JSON is invalid
+            return false;
+        }
+    }
+
+    /**
+     * Auto-fill response values in a new request body based on a mapping of keys and values.
+     *
+     * @param oldRequestBody The original request body containing key-value pairs.
+     * @param newRequestBody The new request body with placeholders to be filled.
+     * @return The new request body with placeholders replaced by actual values.
+     */
+    public static String autoFillResponseValues(String oldRequestBody, String newRequestBody)
+    {
+        // Convert the old request body JSON string to a HashMap using the jsonToMap method
+        HashMap<String, String> body = (HashMap<String, String>) jsonToMap(oldRequestBody);
+        // Define a pattern to match placeholders in the new request body
+        Pattern pattern = Pattern.compile("#\\{(.*?)\\}", Pattern.CASE_INSENSITIVE);
+        // Create a matcher to find placeholders in the new request body
+        Matcher matcher = pattern.matcher(newRequestBody);
+        // Initialize the index for capturing groups in the pattern
+        int index = 1;
+        // Iterate through the placeholders found in the new request body
+        while (matcher.find()) {
+            // Get the placeholder key to replace
+            String keytoReplace = matcher.group(index);
+            // Get the value associated with the key from the old request body HashMap
+            String valueToReplace = body.get(keytoReplace);
+            // Replace the placeholder in the new request body with the corresponding value
+            newRequestBody=newRequestBody.replaceAll("#\\{"+keytoReplace+"\\}",""+valueToReplace);
+
+        }
+        // Return the new request body with placeholders replaced by values
+        return newRequestBody;
+    }
+
+
+    /**
+     * Sends a API request with a JSON request body, along with headers,
+     * query parameters, and authentication methods based on the provided parameters.
+     *
+     * @param requestBody          JSON request body as a String.
+     * @param requestHeader        Headers for the request in JSON format as a String.
+     * @param requestQueryParameters Query parameters for the request in JSON format as a String.
+     * @param endPoint             The endpoint of the API request.
+     * @param requestType          The HTTP request method type (e.g., GET, POST, PUT, DELETE).
+     * @param excelKey             The key used to retrieve necessary data from an Excel source.
+     * @return A Response object containing the API response data.
+     * @throws IOException if an I/O exception occurs while fetching data from an Excel source.
+     */
+    public Response simpleRequestWithJsonBody(String requestBody, String requestHeader, String requestQueryParameters, String endPoint, String requestType, String excelKey) throws IOException {
+        // Get data from Excel based on the provided excelKey
+        ArrayList<String> requestData = (ArrayList<String>) excelUtil.getData(excelKey);
+        // Get the base URI and endpoint from configuration
+        String baseUri = ConfigUtil.baseUri("auth");
+        String ep = ConfigUtil.getEndpoint(endPoint);
+        System.out.println("base: " + baseUri + ", endpoint: " + ep);
+        // Convert request header and query parameters to Map using jsonToMap method
+        Map<String, String> header = jsonToMap(requestHeader);
+        Map<String, String> queryParameters=jsonToMap(requestQueryParameters);
+        // Build the request specification using RestAssured
+        RequestSpecification request = RestAssured.given()
+                .baseUri(baseUri)
+                .queryParams(queryParameters)
+                .headers(header)
+                .body(requestBody);
+
+        Response response;
+        // Check if authentication data is provided in the requestData
+        if (requestData.get(4) != null && !requestData.get(4).isEmpty()) {
+            // Parse authentication JSON from the requestData
+            JsonObject json = JsonParser.parseString(requestData.get(4)).getAsJsonObject();
+            String username = json.get("Username").getAsString();
+            String password = json.get("Password").getAsString();
+            boolean isPreemptive = json.has("Preemptive") && json.get("Preemptive").getAsBoolean();
+            // Check if preemptive authentication is required
+            if (isPreemptive) {
+                response = sendRequestWithPreemptiveAuth(request, ep, requestType, username, password);
+            } else {
+                response = sendRequestWithBasicAuth(request, ep, requestType, username, password);
+            }
+        } else {
+            // Send request without authentication
+            response = sendRequestWithoutAuth(request, ep, requestType);
+        }
+
+        return response;
+    }
+
+
+
+    /**
+     * Sends a API request with a JSON request body, along with headers,
+     * query parameters, and authentication methods based on the provided parameters.
+     *
+     * @param requestBody          JSON request body as a String.
+     * @param requestHeader        Headers for the request in JSON format as a String.
+     * @param requestQueryParameters Query parameters for the request in JSON format as a String.
+     * @param endPoint             The endpoint of the API request.
+     * @param requestType          The HTTP request method type (e.g., GET, POST, PUT, DELETE).
+     * @param excelKey             The key used to retrieve necessary data from an Excel source.
+     * @param server               The server identifier to determine the base URI configuration.
+     * @return A Response object containing the API response data.
+     * @throws IOException if an I/O exception occurs while fetching data from an Excel source.
+     */
+    public Response serverRequestWithJsonBody(String requestBody, String requestHeader, String requestQueryParameters, String endPoint, String requestType, String excelKey, String server) throws IOException {
+        ArrayList<String> requestData = (ArrayList<String>) excelUtil.getData(excelKey);
+        String baseUri = ConfigUtil.baseUri(server);
+        String ep = ConfigUtil.getEndpoint(endPoint);
+        System.out.println("base: " + baseUri + ", endpoint: " + ep);
+        Map<String, String> header = jsonToMap(requestHeader);
+        Map<String, String> queryParameters=jsonToMap(requestQueryParameters);
+        RequestSpecification request = RestAssured.given()
+                .baseUri(baseUri)
+                .queryParams(queryParameters)
+                .headers(header)
+                .body(requestBody);
+
+        Response response;
+        String environment=ConfigUtil.configGetString("activeEnv");
+        System.out.println("Active Environment"+environment);
+        if (requestData.get(4) != null && !requestData.get(4).isEmpty()) {
+            JsonArray jsonArray = JsonParser.parseString(requestData.get(4)).getAsJsonArray();
+
+            // Find the JSON object with the matching "Environment" value
+            JsonObject selectedEnvObject = null;
+            for (JsonElement element : jsonArray) {
+                JsonObject jsonObject = element.getAsJsonObject();
+                if (jsonObject.has("Environment") && jsonObject.get("Environment").getAsString().equalsIgnoreCase(environment)) {
+                    selectedEnvObject = jsonObject;
+                    break; // Found the matching environment, exit the loop
+                }
+            }
+
+            if (selectedEnvObject != null) {
+                String username = selectedEnvObject.get("Username").getAsString();
+                String password = selectedEnvObject.get("Password").getAsString();
+                System.out.println("Usersname"+username);
+                String preemptive = selectedEnvObject.get("Preemptive").getAsString();
+                System.out.println("Preemptive"+preemptive);
+                boolean isPreemptive = selectedEnvObject.has("preemptive") && selectedEnvObject.get("Preemptive").getAsBoolean();
+                if (isPreemptive) {
+                    System.out.println("isPreemptive"+isPreemptive);
+                    response = sendRequestWithPreemptiveAuth(request, ep, requestType, username, password);
+                } else {
+                    System.out.println("NotisPreemptive"+isPreemptive);
+                    response = sendRequestWithBasicAuth(request, ep, requestType, username, password);
+                }
+            } else {
+                // Handle the case where no matching environment was found
+                throw new RuntimeException("Environment not found: " + environment);
+            }
+        } else {
+            response = sendRequestWithoutAuth(request, ep, requestType);
+        }
+
+        return response;
+    }
+
+
+
+    /**
+     * Sends a API request with URL-encoded request body, along with headers,
+     * query parameters, and authentication methods based on the provided parameters.
+     *
+     * @param requestBody          JSON request body as a String.
+     * @param requestHeader        Headers for the request in JSON format as a String.
+     * @param requestQueryParameters Query parameters for the request in JSON format as a String.
+     * @param endPoint             The endpoint of the API request.
+     * @param requestType          The HTTP request method type (e.g., GET, POST, PUT, DELETE).
+     * @param excelKey             The key used to retrieve necessary data from an Excel source.
+     * @return A Response object containing the API response data.
+     * @throws IOException if an I/O exception occurs while fetching data from an Excel source.
+     */
+    public Response simpleRequestWithUrlEncodedBody(String requestBody, String requestHeader, String requestQueryParameters, String endPoint, String requestType, String excelKey) throws IOException {
+        ArrayList<String> data1 = (ArrayList<String>) excelUtil.getData(excelKey);
+        String baseUri = ConfigUtil.baseUri("auth");
+        String ep = ConfigUtil.getEndpoint(endPoint);
+        System.out.println("base: " + baseUri + ", endpoint: " + ep);
+        Map<String, String> header = jsonToMap(requestHeader);
+        Map<String, String> body = jsonToMap(requestBody);
+        Map<String, String> queryParameters=jsonToMap(requestQueryParameters);
+        StringBuilder postData = new StringBuilder();
+        //Convert json body to URLEncoded body
+        for (Map.Entry<String, String> entry : body.entrySet()) {
+            if (postData.length() != 0) {
+                postData.append('&');
+            }
+            postData.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
+            postData.append('=');
+            postData.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
+        }
+        RequestSpecification request = RestAssured.given()
+                .baseUri(baseUri)
+                .queryParams(queryParameters)
+                .headers(header)
+                .body(postData.toString())
+                        ;
+
+        Response response;
+        System.out.println("URL ENCODED BODY"+postData);
+        if (data1.get(4) != null && !data1.get(4).isEmpty()) {
+            JsonObject json = JsonParser.parseString(data1.get(4)).getAsJsonObject();
+            String username = json.get("Username").getAsString();
+            String password = json.get("Password").getAsString();
+            boolean isPreemptive = json.has("Preemptive") && json.get("Preemptive").getAsBoolean();
+
+            if (isPreemptive) {
+                response = sendRequestWithPreemptiveAuth(request, ep, requestType, username, password);
+            } else {
+                response = sendRequestWithBasicAuth(request, ep, requestType, username, password);
+            }
+        } else {
+            response = sendRequestWithoutAuth(request, ep, requestType);
+        }
+
+        return response;
+    }
+
+    /**
+     * Sends a API request with URL-encoded request body, along with headers,
+     * query parameters, and authentication methods based on the provided parameters and server.
+     *
+     * @param requestBody          JSON request body as a String.
+     * @param requestHeader        Headers for the request in JSON format as a String.
+     * @param requestQueryParameters Query parameters for the request in JSON format as a String.
+     * @param endPoint             The endpoint of the API request.
+     * @param requestType          The HTTP request method type (e.g., GET, POST, PUT, DELETE).
+     * @param excelKey             The key used to retrieve necessary data from an Excel source.
+     * @param server               The server identifier to determine the base URI configuration.
+     * @return A Response object containing the API response data.
+     * @throws IOException if an I/O exception occurs while fetching data from an Excel source.
+     */
+    public Response serverRequestWithUrlEncodedBody(String requestBody, String requestHeader, String requestQueryParameters, String endPoint, String requestType, String excelKey, String server) throws IOException {
+        ArrayList<String> data1 = (ArrayList<String>) excelUtil.getData(excelKey);
+        String baseUri = ConfigUtil.baseUri(server);
+        String ep = ConfigUtil.getEndpoint(endPoint);
+        System.out.println("base: " + baseUri + ", endpoint: " + ep);
+        Map<String, String> header = jsonToMap(requestHeader);
+        Map<String, String> body = jsonToMap(requestBody);
+        Map<String, String> queryParameters=jsonToMap(requestQueryParameters);
+        StringBuilder postData = new StringBuilder();
+
+        for (Map.Entry<String, String> entry : body.entrySet()) {
+            if (postData.length() != 0) {
+                postData.append('&');
+            }
+            postData.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
+            postData.append('=');
+            postData.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
+        }
+        RequestSpecification request = RestAssured.given()
+                .baseUri(baseUri)
+                .queryParams(queryParameters)
+                .headers(header)
+                .body(postData.toString())
+                ;
+
+        Response response;
+        System.out.println("URL ENCODED BODY"+postData);
+        if (data1.get(4) != null && !data1.get(4).isEmpty()) {
+            JsonObject json = JsonParser.parseString(data1.get(4)).getAsJsonObject();
+            String username = json.get("Username").getAsString();
+            String password = json.get("Password").getAsString();
+            boolean isPreemptive = json.has("Preemptive") && json.get("Preemptive").getAsBoolean();
+
+            if (isPreemptive) {
+                response = sendRequestWithPreemptiveAuth(request, ep, requestType, username, password);
+            } else {
+                response = sendRequestWithBasicAuth(request, ep, requestType, username, password);
+            }
+        } else {
+            response = sendRequestWithoutAuth(request, ep, requestType);
+        }
+
+        return response;
+    }
+
+    /**
+     * A utility method for getting value from a JSON response based on the provided key.
+     *
+     * @param apiResponse The JSON response from which to extract the value.
+     * @param key The key specifying the value to be extracted.
+     * @return The extracted value corresponding to the provided key.
+     */
+    public String resolveJSONArray(String apiResponse, String key){
+
+        if (key.charAt(0) == '['){
+            String index = "";
+            String newKey = "";
+            Boolean isKey = false;
+            char[] keyArray = key.toCharArray();
+            for(int i = 1; i < keyArray.length; i++){
+                if (!isKey && keyArray[i] == ']') {
+                    isKey = true;
+                    i = i + 1;
+                    continue;
+                }
+
+                if (isKey){
+                    newKey += keyArray[i];
+                } else {
+                    index += keyArray[i];
+                }
+
+            }
+
+            int x = Integer.parseInt(index);
+            JSONArray jsonArr = new JSONArray(apiResponse);
+            Object obj = jsonArr.get(x);
+            JSONObject jo = new JSONObject( obj.toString() );
+
+            return jo.get(newKey).toString();
+        }
+        else {
+            JSONObject jo = new JSONObject( apiResponse );
+
+            return jo.get(key).toString();
+        }
+
+    }
+
+    /**
+     * Sends an API request with no authentication credentials,
+     * using the provided RequestSpecification, endpoint, and HTTP method.
+     *
+     * @param request  The RequestSpecification containing request details.
+     * @param endPoint The endpoint of the API request.
+     * @param requestType          The HTTP request method type (e.g., GET, POST, PUT, DELETE).
+     * @return A Response object containing the API response data.
+     */
+    private Response sendRequestWithoutAuth(RequestSpecification request, String endPoint, String requestType) {
+        return sendRequest(request, endPoint, requestType);
+    }
+
+    /**
+     * Sends a preemptively authenticated API request using basic authentication,
+     * using the provided RequestSpecification, endpoint, HTTP request type, username, and password.
+     *
+     * @param request     The RequestSpecification containing request details.
+     * @param endPoint    The endpoint of the API request.
+     * @param requestType The HTTP request method type (e.g., GET, POST, PUT, DELETE).
+     * @param username    The username for basic authentication.
+     * @param password    The password for basic authentication.
+     * @return A Response object containing the API response data.
+     */
+    private Response sendRequestWithPreemptiveAuth(RequestSpecification request, String endPoint, String requestType, String username, String password) {
+        request = request.auth().preemptive().basic(username, password);
+        return sendRequest(request, endPoint, requestType);
+    }
+
+    /**
+     * Sends a API request using basic authentication,
+     * using the provided RequestSpecification, endpoint, HTTP request type, username, and password.
+     *
+     * @param request     The RequestSpecification containing request details.
+     * @param endPoint    The endpoint of the API request.
+     * @param requestType The HTTP request method type (e.g., GET, POST, PUT, DELETE).
+     * @param username    The username for basic authentication.
+     * @param password    The password for basic authentication.
+     * @return A Response object containing the API response data.
+     */
+    private Response sendRequestWithBasicAuth(RequestSpecification request, String endPoint, String requestType, String username, String password) {
+        request = request.auth().basic(username, password);
+        return sendRequest(request, endPoint, requestType);
+    }
+
+    /**
+     * Sends a API request using the provided RequestSpecification,
+     * endpoint, and HTTP method type, and returns the API response.
+     *
+     * @param request  The RequestSpecification containing request details.
+     * @param endpoint The endpoint of the API request.
+     * @param method   The HTTP request method type (e.g., GET, POST, PUT, DELETE).
+     * @return A Response object containing the API response data.
+     * @throws IllegalArgumentException if the provided method is invalid.
+     */
+    private Response sendRequest(RequestSpecification request, String endpoint, String method) {
+        Response response;
+
+        if (method.equalsIgnoreCase("post")) {
+            response = request.post(endpoint);
+        } else if (method.equalsIgnoreCase("get")) {
+            response = request.get(endpoint);
+        } else if (method.equalsIgnoreCase("delete")) {
+            response = request.delete(endpoint);
+        } else if (method.equalsIgnoreCase("put")) {
+            response = request.put(endpoint);
+        } else {
+            throw new IllegalArgumentException("Invalid request type: " + method);
+        }
+
+        return response;
     }
 }
+
+
+[{"Environment":"development","Username":"postman","Password":"password","Preemptive":"true"},{"Environment":"production","Username":"postman","Password":"password","Preemptive":"true"}]
